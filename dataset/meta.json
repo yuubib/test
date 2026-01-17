@@ -1,0 +1,200 @@
+{
+  "scene": "veach-ajar/scene.xml",
+  "variant": "cuda_ad_rgb",
+  "n_frames": 1,
+  "spp": 1024,
+  "camera_key": "sensor.to_world",
+  "center": [
+    4.054019927978516,
+    1.6164699792861938,
+    -2.3065199851989746
+  ],
+  "target": [
+    3.06400990486145,
+    1.5841699838638306,
+    -2.443730115890503
+  ],
+  "up": [
+    -0.03199249878525734,
+    0.9994779825210571,
+    -0.004434079863131046
+  ],
+  "radius": 1.0,
+  "atlas": {
+    "K": 4,
+    "tile": 0.25,
+    "pad": 0.0078125,
+    "inside": 0.234375,
+    "tex_res": 512,
+    "pad_texels": 4,
+    "meshes": [
+      {
+        "i": 0,
+        "pk": "Door.vertex_positions",
+        "uk": "Door.vertex_texcoords",
+        "tile_xy": [
+          0,
+          0
+        ],
+        "uv_offset": [
+          0.0078125,
+          0.0078125
+        ]
+      },
+      {
+        "i": 1,
+        "pk": "DoorFrame.vertex_positions",
+        "uk": "DoorFrame.vertex_texcoords",
+        "tile_xy": [
+          1,
+          0
+        ],
+        "uv_offset": [
+          0.2578125,
+          0.0078125
+        ]
+      },
+      {
+        "i": 2,
+        "pk": "DoorHandle.vertex_positions",
+        "uk": "DoorHandle.vertex_texcoords",
+        "tile_xy": [
+          2,
+          0
+        ],
+        "uv_offset": [
+          0.5078125,
+          0.0078125
+        ]
+      },
+      {
+        "i": 3,
+        "pk": "Floor.vertex_positions",
+        "uk": "Floor.vertex_texcoords",
+        "tile_xy": [
+          3,
+          0
+        ],
+        "uv_offset": [
+          0.7578125,
+          0.0078125
+        ]
+      },
+      {
+        "i": 4,
+        "pk": "Landscape.vertex_positions",
+        "uk": "Landscape.vertex_texcoords",
+        "tile_xy": [
+          0,
+          1
+        ],
+        "uv_offset": [
+          0.0078125,
+          0.2578125
+        ]
+      },
+      {
+        "i": 5,
+        "pk": "PictureFrame.vertex_positions",
+        "uk": "PictureFrame.vertex_texcoords",
+        "tile_xy": [
+          1,
+          1
+        ],
+        "uv_offset": [
+          0.2578125,
+          0.2578125
+        ]
+      },
+      {
+        "i": 6,
+        "pk": "Table.vertex_positions",
+        "uk": "Table.vertex_texcoords",
+        "tile_xy": [
+          2,
+          1
+        ],
+        "uv_offset": [
+          0.5078125,
+          0.2578125
+        ]
+      },
+      {
+        "i": 7,
+        "pk": "object_1927678820720.vertex_positions",
+        "uk": "object_1927678820720.vertex_texcoords",
+        "tile_xy": [
+          3,
+          1
+        ],
+        "uv_offset": [
+          0.7578125,
+          0.2578125
+        ]
+      },
+      {
+        "i": 8,
+        "pk": "object_1927678821824.vertex_positions",
+        "uk": "object_1927678821824.vertex_texcoords",
+        "tile_xy": [
+          0,
+          2
+        ],
+        "uv_offset": [
+          0.0078125,
+          0.5078125
+        ]
+      },
+      {
+        "i": 9,
+        "pk": "object_1927678826240.vertex_positions",
+        "uk": "object_1927678826240.vertex_texcoords",
+        "tile_xy": [
+          1,
+          2
+        ],
+        "uv_offset": [
+          0.2578125,
+          0.5078125
+        ]
+      },
+      {
+        "i": 10,
+        "pk": "object_1927678830656.vertex_positions",
+        "uk": "object_1927678830656.vertex_texcoords",
+        "tile_xy": [
+          2,
+          2
+        ],
+        "uv_offset": [
+          0.5078125,
+          0.5078125
+        ]
+      },
+      {
+        "i": 11,
+        "pk": "object_1927678833968.vertex_positions",
+        "uk": "object_1927678833968.vertex_texcoords",
+        "tile_xy": [
+          3,
+          2
+        ],
+        "uv_offset": [
+          0.7578125,
+          0.5078125
+        ]
+      }
+    ]
+  },
+  "frames": [
+    {
+      "frame": 0,
+      "file": "frames/frame_0000.npz",
+      "img_key": "img"
+    }
+  ],
+  "res": [
+    1280,
+    720
+  ]
+}
