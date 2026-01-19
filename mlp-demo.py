@@ -520,10 +520,11 @@ def save_preview(renderer, dataset_root="./dataset", frame_idx=0, out_path="./pr
 
     pred_np = pred.squeeze(0).detach().cpu().numpy()
     gt_np   = rgb.squeeze(0).detach().cpu().numpy()
+    indirect_np   = indirect.squeeze(0).detach().cpu().numpy()
 
     pred_u8 = _to_uint8_srgb(pred_np, exposure=exposure)
     gt_u8   = _to_uint8_srgb(gt_np, exposure=exposure)
-    indirect_u8   = _to_uint8_srgb(indirect, exposure=exposure)
+    indirect_u8   = _to_uint8_srgb(indirect_np, exposure=exposure)
 
     # side-by-side: [pred | gt]
     vis = np.concatenate([pred_u8, gt_u8], axis=1)
@@ -535,5 +536,5 @@ def save_preview(renderer, dataset_root="./dataset", frame_idx=0, out_path="./pr
     print("Saved:", out_path, "(left=pred, right=gt)")
 
 if __name__ == "__main__":
-    renderer = train_epochs(root="./dataset", epochs=5000, batch_size=4, lr=1e-3)
+    renderer = train_epochs(root="./dataset", epochs=2, batch_size=4, lr=1e-3)
     save_preview(renderer, "./dataset", frame_idx=0, out_path="./preview.png", exposure=0.0)

@@ -8,10 +8,10 @@ mi.set_variant("cuda_ad_rgb")
 # -----------------------------
 # 配置
 # -----------------------------
-SCENE_PATH = "veach-ajar/scene.xml"
-OUT_DIR = "./dataset"
+SCENE_PATH = "volumetric-caustic/scene.xml"
+OUT_DIR = "./test"
 N_FRAMES = 1
-SPP = 1024
+SPP = 512
 
 TEX_RES = 512
 PAD_TEXELS = 4
@@ -75,7 +75,7 @@ params = mi.traverse(scene)
 # 找 mesh keys
 pos_keys = sorted([k for k in params.keys() if k.endswith("vertex_positions")])
 uv_keys  = sorted([k for k in params.keys() if k.endswith("vertex_texcoords")])
-
+print(uv_keys)
 pairs = []
 for uk in uv_keys:
     pk = uk.replace("vertex_texcoords", "vertex_positions")
@@ -168,76 +168,89 @@ for f in range(N_FRAMES):
     #origin = center + np.array([radius*np.sin(ang), 0.6, radius*np.cos(ang)], dtype=np.float32)
     origin = center
 
-    T = mi.ScalarTransform4f.look_at(
-        origin=mi.ScalarPoint3f(*origin),
-        target=mi.ScalarPoint3f(*target),
-        up=mi.ScalarVector3f(*up)
-    )
+    # T = mi.ScalarTransform4f.look_at(
+    #     origin=mi.ScalarPoint3f(*origin),
+    #     target=mi.ScalarPoint3f(*target),
+    #     up=mi.ScalarVector3f(*up)
+    # )
 
-    params[cam_key] = T
-    params.update()
+    # params[cam_key] = T
+    # params.update()
 
     # 确保 film 清空
     film.clear()
 
     _ = mi.render(scene, integrator=uv_integrator, spp=SPP)
 
-    comp = get_component_dict(film)
+    components = scene.sensors()[0].film().bitmap(raw=False).split()
 
-    # 组件命名在不同版本可能略有差异；这里做“必需项检查 + 自动取图像输出”
-    # AOV 部分通常就是 uv/position/sh_normal/shape_index
-    need = ["uv", "position", "sh_normal", "albedo"]
-    for k in need:
-        if k not in comp:
-            raise RuntimeError(f"Missing AOV '{k}'. Available keys: {list(comp.keys())}")
+    for i in range(len(components)):
+        if 'root' in components[i][0]:
+            buffer = components[i][1].convert(mi.Bitmap.PixelFormat.RGB, mi.Struct.Type.Float32, srgb_gamma=False)
+            mi.util.write_bitmap("root.exr", buffer)
+        if 'img' in components[i][0]:
+            buffer = components[i][1].convert(mi.Bitmap.PixelFormat.RGB, mi.Struct.Type.Float32, srgb_gamma=False)
+            mi.util.write_bitmap("img.exr", buffer)
+        if 'sh_normal' in components[i][0]:
+            mi.util.write_bitmap("sh_normal.exr", components[i][1])
+        if 'albedo' in components[i][0]:
+            mi.util.write_bitmap("albedo.exr", components[i][1])
+        if 'uv' in components[i][0]:
+            mi.util.write_bitmap("uv.exr", components[i][1])
+    # # 组件命名在不同版本可能略有差异；这里做“必需项检查 + 自动取图像输出”
+    # # AOV 部分通常就是 uv/position/sh_normal/shape_index
+    # need = ["uv", "position", "sh_normal", "albedo"]
+    # for k in need:
+    #     if k not in comp:
+    #         raise RuntimeError(f"Missing AOV '{k}'. Available keys: {list(comp.keys())}")
 
-    # 主图像输出：优先找 img / color / beauty / root；找不到就取“第一个非 AOV”
-    img_key = None
-    for cand in ["img", "color", "beauty", "root", "rgba"]:
-        if cand in comp:
-            img_key = cand
-            break
-    if img_key is None:
-        aov_set = set(need)
-        for k in comp.keys():
-            if k not in aov_set:
-                img_key = k
-                break
-    if img_key is None:
-        raise RuntimeError(f"Cannot find main RGB output. Keys: {list(comp.keys())}")
+    # # 主图像输出：优先找 img / color / beauty / root；找不到就取“第一个非 AOV”
+    # img_key = None
+    # for cand in ["img", "color", "beauty", "root", "rgba"]:
+    #     if cand in comp:
+    #         img_key = cand
+    #         break
+    # if img_key is None:
+    #     aov_set = set(need)
+    #     for k in comp.keys():
+    #         if k not in aov_set:
+    #             img_key = k
+    #             break
+    # if img_key is None:
+    #     raise RuntimeError(f"Cannot find main RGB output. Keys: {list(comp.keys())}")
 
-    rgb = bitmap_to_numpy(comp[img_key], mi.Bitmap.PixelFormat.RGBA)[..., :3]  # HxWx3
-    pos = bitmap_to_numpy(comp["position"], mi.Bitmap.PixelFormat.RGBA)[..., :3]
-    nrm = bitmap_to_numpy(comp["sh_normal"], mi.Bitmap.PixelFormat.RGBA)[..., :3]
-    alb = bitmap_to_numpy(comp["albedo"], mi.Bitmap.PixelFormat.RGBA)[..., :3]
+    # rgb = bitmap_to_numpy(comp[img_key], mi.Bitmap.PixelFormat.RGBA)[..., :3]  # HxWx3
+    # pos = bitmap_to_numpy(comp["position"], mi.Bitmap.PixelFormat.RGBA)[..., :3]
+    # nrm = bitmap_to_numpy(comp["sh_normal"], mi.Bitmap.PixelFormat.RGBA)[..., :3]
+    # alb = bitmap_to_numpy(comp["albedo"], mi.Bitmap.PixelFormat.RGBA)[..., :3]
 
-    uv_rgba = bitmap_to_numpy(comp["uv"], mi.Bitmap.PixelFormat.YA)
-    uv = uv_rgba[..., :2]  # uv 只取前两维
+    # uv_rgba = bitmap_to_numpy(comp["uv"], mi.Bitmap.PixelFormat.YA)
+    # uv = uv_rgba[..., :2]  # uv 只取前两维
 
-    # 保存相机矩阵（4x4）
-    T_np = np.array(T.matrix, dtype=np.float32)  # ScalarTransform4f.matrix -> 4x4
-    frame_path = os.path.join(OUT_DIR, "frames", f"frame_{f:04d}.npz")
+    # # 保存相机矩阵（4x4）
+    # T_np = np.array(T.matrix, dtype=np.float32)  # ScalarTransform4f.matrix -> 4x4
+    # frame_path = os.path.join(OUT_DIR, "frames", f"frame_{f:04d}.npz")
 
-    np.savez_compressed(
-        frame_path,
-        rgb=rgb,
-        position=pos,
-        sh_normal=nrm,
-        albedo = alb,
-        uv=uv,
-        cam_to_world=T_np,
-        cam_origin=np.array(origin, dtype=np.float32),
-        cam_target=np.array(target, dtype=np.float32),
-        cam_up=np.array(up, dtype=np.float32),
-    )
+    # np.savez_compressed(
+    #     frame_path,
+    #     rgb=rgb,
+    #     position=pos,
+    #     sh_normal=nrm,
+    #     albedo = alb,
+    #     uv=uv,
+    #     cam_to_world=T_np,
+    #     cam_origin=np.array(origin, dtype=np.float32),
+    #     cam_target=np.array(target, dtype=np.float32),
+    #     cam_up=np.array(up, dtype=np.float32),
+    # )
 
-    meta["frames"].append({
-        "frame": f,
-        "file": f"frames/frame_{f:04d}.npz",
-        "img_key": img_key
-    })
+    # meta["frames"].append({
+    #     "frame": f,
+    #     "file": f"frames/frame_{f:04d}.npz",
+    #     "img_key": img_key
+    # })
 
-    print(f"[{f:04d}] saved -> {frame_path} (img_key={img_key})")
+    # print(f"[{f:04d}] saved -> {frame_path} (img_key={img_key})")
 
 with open(os.path.join(OUT_DIR, "meta.json"), "w", encoding="utf-8") as fp:
     json.dump(meta, fp, indent=2, ensure_ascii=False)

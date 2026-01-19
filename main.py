@@ -1,7 +1,7 @@
 import mitsuba as mi
 import drjit as dr
 mi.set_variant("cuda_ad_rgb")
-scene = mi.load_file("./veach-ajar/scene.xml")
+scene = mi.load_file("./cornell-box/scene.xml")
 
 scene.integrator().render(scene, scene.sensors()[0])
 components = scene.sensors()[0].film().bitmap(raw=False).split()
