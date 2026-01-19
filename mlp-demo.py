@@ -429,7 +429,7 @@ def train_epochs(
     # --- 可训练对象：probe coeffs & theta texture & mlp weights
     n_sh = 16  # L=3 -> 16
     probe = ProbeGridSH(
-        grid_res=(16, 8, 16),
+        grid_res=(128, 128, 128),
         n_sh=n_sh,
         aabb_min=torch.tensor([-9.64634, -0.01676, -7.6]),
         aabb_max=torch.tensor([7.43, 3.8, 0.599999]),
