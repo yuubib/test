@@ -446,7 +446,9 @@ def train_epochs(
     renderer = FactorizedRenderer(probe, theta_tex, mlp).to(device)
 
     optim = torch.optim.Adam(renderer.parameters(), lr=1e-3)
-
+    scheduler = torch.optim.lr_scheduler.StepLR(
+        optim, step_size=1, gamma=0.5   # 每 10 个 epoch，lr *= 0.5
+        )
     for epoch in range(epochs):
         renderer.train()
         running = 0.0
@@ -469,7 +471,7 @@ def train_epochs(
 
             running += float(loss.item())
             n_batches += 1
-
+            scheduler.step()  # 关键：epoch 结束后 step
             if log_every and ((it + 1) % log_every == 0):
                 print(f"epoch {epoch:03d} iter {it+1:04d}/{len(dl)} loss={loss.item():.6f}")
 
