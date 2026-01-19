@@ -33,7 +33,7 @@ class PerPixelMLP(nn.Module):
         out_activation: str | None = None,  # None | "sigmoid" | "softplus"
     ):
         super().__init__()
-        in_dim = 3 + 3 + 6 + theta_dim
+        in_dim = 3 + 3 + 3 + 6 + theta_dim
         self.in_dim = in_dim
         self.out_features = out_features
         self.use_skip = use_skip
@@ -51,9 +51,9 @@ class PerPixelMLP(nn.Module):
 
         self.outer = nn.Linear(hidden_dim, out_features)
 
-    def forward(self, normal, position, view, theta):
+    def forward(self, normal, position, albedo, view, theta):
         # 支持 [...,C] 任意 batch 形状；最后一维是通道
-        x = torch.cat([normal, position, view,theta], dim=-1)  # [..., in_dim]
+        x = torch.cat([normal, position, albedo, view,theta], dim=-1)  # [..., in_dim]
         x0 = x.reshape(-1, self.in_dim)  # [N, in_dim]
 
         h = self.inner(x0)
@@ -309,7 +309,7 @@ class FactorizedRenderer(nn.Module):
         self.theta_tex = theta_tex
         self.mlp = mlp
 
-    def forward(self, normal, position, view, uv):
+    def forward(self, normal, position, albedo, view, uv):
         """
         normal:   [...,3]
         position: [...,3]
@@ -327,7 +327,7 @@ class FactorizedRenderer(nn.Module):
         theta = self.theta_tex.sample(uv)  # [..., D]
 
         # 4) reflectance/network factor
-        F_hat = self.mlp(normal, position, view, theta)  # [...,3] (or [...,1])
+        F_hat = self.mlp(normal, position, albedo, view, theta)  # [...,3] (or [...,1])
 
         # 5) factorized output
         Lo = E * F_hat
@@ -374,33 +374,33 @@ class MitsubaNPZDataset(Dataset):
             "view": view,
         }
 
-class CompositeRenderer(nn.Module):
-    """
-    final_pred = indirect_renderer(...) + s * albedo
-    s: learnable RGB vector
-    """
-    def __init__(self, indirect_renderer: nn.Module, s_init=1, constrain_nonneg=False):
-        super().__init__()
-        self.indirect = indirect_renderer
-        self.constrain_nonneg = constrain_nonneg
+# class CompositeRenderer(nn.Module):
+#     """
+#     final_pred = indirect_renderer(...) + s * albedo
+#     s: learnable RGB vector
+#     """
+#     def __init__(self, indirect_renderer: nn.Module, s_init=1, constrain_nonneg=False):
+#         super().__init__()
+#         self.indirect = indirect_renderer
+#         self.constrain_nonneg = constrain_nonneg
 
-        if constrain_nonneg:
-            # 用 softplus 约束 s >= 0（可选）
-            s0 = torch.full((3,), float(s_init))
-            self.s_raw = nn.Parameter(torch.log(torch.exp(s0) - 1.0))  # inverse softplus
-        else:
-            self.s = nn.Parameter(torch.full((3,), float(s_init)))
+#         if constrain_nonneg:
+#             # 用 softplus 约束 s >= 0（可选）
+#             s0 = torch.full((3,), float(s_init))
+#             self.s_raw = nn.Parameter(torch.log(torch.exp(s0) - 1.0))  # inverse softplus
+#         else:
+#             self.s = nn.Parameter(torch.full((3,), float(s_init)))
 
-    def get_s(self):
-        if self.constrain_nonneg:
-            return F.softplus(self.s_raw)
-        return self.s
+#     def get_s(self):
+#         if self.constrain_nonneg:
+#             return F.softplus(self.s_raw)
+#         return self.s
 
-    def forward(self, nrm, pos, view, uv, albedo):
-        indirect = self.indirect(nrm, pos, view, uv)  # [B,H,W,3]
-        s = self.get_s().view(1, 1, 1, 3)             # broadcast
-        pred = indirect + s * albedo                  # [B,H,W,3]
-        return pred, indirect
+#     def forward(self, nrm, pos, view, uv, albedo):
+#         indirect = self.indirect(nrm, pos, view, uv)  # [B,H,W,3]
+#         s = self.get_s().view(1, 1, 1, 3)             # broadcast
+#         pred = indirect + s * albedo                  # [B,H,W,3]
+#         return pred, indirect
 # -------------------------
 # 5) 训练：把探针和 θ 加进 optimizer，靠渲染损失反传更新
 # -------------------------
@@ -443,8 +443,7 @@ def train_epochs(
         theta_dim=32, hidden_dim=256, num_hidden_layers=2, out_features=3, use_skip=True
     ).to(device)
 
-    renderer_indirect = FactorizedRenderer(probe, theta_tex, mlp).to(device)
-    renderer = CompositeRenderer(renderer_indirect, s_init=1, constrain_nonneg=False).to(device)
+    renderer = FactorizedRenderer(probe, theta_tex, mlp).to(device)
 
     optim = torch.optim.Adam(renderer.parameters(), lr=1e-3)
 
@@ -461,7 +460,7 @@ def train_epochs(
             uv    = batch["uv"].to(device, non_blocking=True)         # [B,H,W,2]
             view = batch["view"].to(device, non_blocking=True)      # [B,H,W,6]
 
-            pred, indirect = renderer(nrm, pos, view, uv, albedo)                  # [B,H,W,3]
+            pred = renderer(nrm, pos, albedo, view, uv)                  # [B,H,W,3]
             loss = F.mse_loss(pred, rgb)
 
             optim.zero_grad(set_to_none=True)
@@ -476,7 +475,6 @@ def train_epochs(
 
         epoch_loss = running / max(1, n_batches)
         print(f"[epoch {epoch:03d}] mean_loss={epoch_loss:.6f}")
-        print("epoch", epoch, "loss", float(loss.item()), "s", renderer.get_s().detach().cpu().numpy())
 
     return renderer
 import os
@@ -516,15 +514,13 @@ def save_preview(renderer, dataset_root="./dataset", frame_idx=0, out_path="./pr
     uv    = sample["uv"].unsqueeze(0).to(device)         # [1,H,W,2]
     view = sample["view"].unsqueeze(0).to(device)      # [1,H,W,6]
 
-    pred, indirect = renderer(nrm, pos, view, uv, albedo)         # [1,H,W,3]
+    pred = renderer(nrm, pos, albedo, view, uv)         # [1,H,W,3]
 
     pred_np = pred.squeeze(0).detach().cpu().numpy()
     gt_np   = rgb.squeeze(0).detach().cpu().numpy()
-    indirect_np   = indirect.squeeze(0).detach().cpu().numpy()
 
     pred_u8 = _to_uint8_srgb(pred_np, exposure=exposure)
     gt_u8   = _to_uint8_srgb(gt_np, exposure=exposure)
-    indirect_u8   = _to_uint8_srgb(indirect_np, exposure=exposure)
 
     # side-by-side: [pred | gt]
     vis = np.concatenate([pred_u8, gt_u8], axis=1)
@@ -532,7 +528,6 @@ def save_preview(renderer, dataset_root="./dataset", frame_idx=0, out_path="./pr
     imageio.imwrite(out_path, vis)
     imageio.imwrite("./pr.png", pred_u8)
     imageio.imwrite("./gt.png", gt_u8)
-    imageio.imwrite("./indirect.png", indirect_u8)
     print("Saved:", out_path, "(left=pred, right=gt)")
 
 if __name__ == "__main__":
