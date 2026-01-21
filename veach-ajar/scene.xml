@@ -3,16 +3,19 @@
     <default name="spp" value="1024"/>
     <default name="resy" value="720"/>
     <default name="resx" value="1280"/>
-    <default name="max_depth" value="13"/>
-    <!-- <integrator type="path">
-        <integer name="max_depth" value="$max_depth"/>
-    </integrator> -->
-    <integrator type="aov">
-        <string name="aovs" value="albedo:albedo"/>
-        <integrator type="direct">
-            <integer name="shading_samples" value="3"/>
+    <default name="max_depth" value="10"/>
+     <integrator type="aov">
+        <string name="aovs" value="position:position, albedo:albedo, sh_normal:sh_normal"/>
+        <integrator type="path">
+            <integer name="max_depth" value="10"/>
         </integrator>
     </integrator>
+    <!-- <integrator type="aov">
+        <string name="aovs" value="position:position"/>
+        <integrator type="path">
+            <integer name="max_depth" value="$max_depth"/>
+        </integrator>
+    </integrator> -->
     <sensor type="perspective" id="sensor">
         <float name="fov" value="60"/>
         <transform name="to_world">

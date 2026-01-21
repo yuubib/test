@@ -8,15 +8,14 @@ mi.set_variant("cuda_ad_rgb")
 # -----------------------------
 # 配置
 # -----------------------------
-SCENE_PATH = "volumetric-caustic/scene.xml"
-OUT_DIR = "./test"
+SCENE_PATH = "veach-ajar/scene.xml"
+OUT_DIR = "./dataset"
 N_FRAMES = 1
 SPP = 1024
 
 TEX_RES = 512
 PAD_TEXELS = 4
 
-# 轨迹参数（你原来的）
 center = np.array([4.05402, 1.61647, -2.30652], dtype=np.float32)
 target = np.array([3.06401, 1.58417, -2.44373], dtype=np.float32)
 up     = np.array([-0.0319925, 0.999478, -0.00443408], dtype=np.float32)
