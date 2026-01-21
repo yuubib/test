@@ -881,7 +881,7 @@ def main() -> None:
 
     model_cfg = ModelConfig(
         theta_dim=32,
-        theta_tex_res=(256, 256),
+        theta_tex_res=(512, 512),
         probe_grid_res=(128, 128, 128),
         sh_order=3,
         aabb_min=(-9.64634, -0.01676, -7.6),
