@@ -239,6 +239,84 @@ class AOVDatasetRenderer:
         }
 
 
+class AOVRuntimeRenderer:
+    def __init__(
+            self,
+            scene: mi.Scene,
+            params: mi.SceneParameters,
+            required_aovs: List[str],
+            integrator_aov_spec: str,
+    ):
+        self.scene = scene
+        self.params = params
+        self.required_aovs = required_aovs
+        self.integrator = mi.load_dict({
+            "type": "aov",
+            "aovs": integrator_aov_spec,  # e.g. "uv:uv, position:position, sh_normal:sh_normal, albedo:albedo"
+        })
+
+        self.cam_key = self._find_camera_to_world_key()
+
+    def _find_camera_to_world_key(self) -> str:
+        cam_keys = [k for k in self.params.keys() if k.endswith("to_world") and "sensor" in k]
+        if not cam_keys:
+            raise RuntimeError("未找到 sensor.to_world")
+        return cam_keys[0]
+
+    @staticmethod
+    def _pick_main_img_key(comp: Dict[str, mi.Bitmap], aov_names: List[str]) -> str:
+        # 常见主输出 key
+        for cand in ["img", "color", "beauty", "root", "rgba"]:
+            if cand in comp:
+                return cand
+        aov_set = set(aov_names)
+        for k in comp.keys():
+            if k not in aov_set:
+                return k
+        raise RuntimeError(f"Cannot find main RGB output. Keys: {list(comp.keys())}")
+
+    def render_frame(
+            self,
+            spp: int,
+            film_raw: bool = False,
+    ) -> Dict[str, np.ndarray]:
+        film = self.scene.sensors()[0].film()
+        film.clear()
+
+        _ = mi.render(self.scene, integrator=self.integrator, spp=int(spp))
+
+        comp = BitmapUtils.split_film_components(film, raw=film_raw)
+
+        # AOV 检查
+        for k in self.required_aovs:
+            if k not in comp:
+                raise RuntimeError(f"Missing AOV '{k}'. Available keys: {list(comp.keys())}")
+        # 输出统一为 float32 HxWx3 / HxWx2
+        # rgb 做log1p处理
+        # pos进行归一化
+        pos = BitmapUtils.to_numpy(comp["position"], mi.Bitmap.PixelFormat.RGBA, srgb_gamma=False)[..., :3]
+        pos = (pos - np.array(self.scene.bbox().min + self.scene.bbox().max) * 0.5.reshape(1, 1, 3)) / (
+                np.array(self.scene.bbox().max - self.scene.bbox().min) * 0.5).reshape(1, 1, 3)
+
+        nrm = BitmapUtils.to_numpy(comp["sh_normal"], mi.Bitmap.PixelFormat.RGBA, srgb_gamma=False)[..., :3]
+        nrm = nrm / np.maximum(np.linalg.norm(nrm, axis=-1, keepdims=True), 1e-8)
+
+        alb = BitmapUtils.to_numpy(comp["albedo"], mi.Bitmap.PixelFormat.RGBA, srgb_gamma=False)[..., :3]
+
+        uv_rgba = np.array(comp["uv"], copy=False).astype(np.float32, copy=False)
+        #uv = uv_rgba[..., :2]
+        # 不知名bug
+        uv = uv_rgba[..., :2][..., [1, 0]]  
+
+        return {
+            "position": pos,
+            "sh_normal": nrm,
+            "albedo": alb,
+            "uv": uv,
+        }
+
+
+
 # ============================================================
 # 轨迹
 # ============================================================
@@ -326,7 +404,35 @@ class DatasetPipeline:
         atlas_meta = packer.pack()
         self.params.update()
         return atlas_meta
+    
+    def runtime(self, param, traj:CameraTrajectory):
+        renderer = AOVRuntimeRenderer(
+            scene=self.scene,
+            params=self.params,
+            required_aovs=["uv", "position", "sh_normal", "albedo"],
+            integrator_aov_spec="uv:uv, position:position, sh_normal:sh_normal, albedo:albedo",
+        )   
+        
+        theta = 0.5 * np.pi * param
+        origin = traj.center + np.array(
+            [traj.radius * np.sin(theta), 0.0, traj.radius * (np.cos(theta)-np.pi / 3)],
+            dtype=np.float32
+        )
+        target = traj.target
 
+        T = mi.ScalarTransform4f.look_at(
+            origin=mi.ScalarPoint3f(*origin),
+            target=mi.ScalarPoint3f(*target),
+            up=mi.ScalarVector3f(*self.cfg.up),
+        )
+        self.params[renderer.cam_key] = T
+        self.params.update()
+
+        frame_data = renderer.render_frame(spp=1, film_raw=False)       
+        frame_data["origin"] = origin         
+        frame_data["target"] = target          
+        return frame_data
+    
     def run(self) -> None:
         atlas_meta = self._pack_uv_atlas()
 
@@ -400,8 +506,8 @@ def main():
     cfg = RenderConfig(
         scene_path="veach-ajar/scene.xml",
         out_dir="./dataset",
-        n_frames=1,
-        spp=4096,
+        n_frames=100,
+        spp=1024,
         tex_res=512,
         pad_texels=4,
         center=np.array([4.05402, 1.61647, -2.30652], dtype=np.float32),

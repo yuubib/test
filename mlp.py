@@ -6,7 +6,7 @@ import json
 import math
 import glob
 import shutil
-from typing import Any, Dict, Tuple, Optional
+from typing import Any, Dict, Tuple, Optional, List
 
 import numpy as np
 import torch
@@ -43,12 +43,12 @@ def to_uint8_srgb(x: np.ndarray, exposure: float = 0.0) -> np.ndarray:
     return (x * 255.0 + 0.5).astype(np.uint8)
 
 
-def flatten_hw(x: torch.Tensor) -> Tuple[torch.Tensor, Tuple[int, ...]]:
-    lead_shape = x.shape[:-1]
+def flatten_hw(x: torch.Tensor) -> Tuple[torch.Tensor, List[int]]:
+    # TorchScript 不支持 Tuple[int, ...]，用 List[int] 存 shape
+    lead_shape: List[int] = list(x.shape[:-1])
     return x.reshape(-1, x.shape[-1]), lead_shape
 
-
-def unflatten_hw(x: torch.Tensor, lead_shape: Tuple[int, ...]) -> torch.Tensor:
+def unflatten_hw(x: torch.Tensor, lead_shape: List[int]) -> torch.Tensor:
     return x.view(*lead_shape, x.shape[-1])
 
 
@@ -862,15 +862,44 @@ def export_realtime_assets(
 
     # --- optional: export MLP as TorchScript for realtime inference (PyTorch runtime)
     if export_mlp_torchscript:
-        renderer.mlp.eval()
-        mlp_ts = torch.jit.script(renderer.mlp.to("cpu"))
+        mlp_cpu = renderer.mlp.to("cpu").eval()
+
+        # 推断 theta_dim：优先用 mlp 属性，没有的话从 theta 纹理推
+        if hasattr(mlp_cpu, "theta_dim"):
+            theta_dim = int(mlp_cpu.theta_dim)
+        else:
+            # theta_tex.tex: [1, D, H, W]
+            theta_dim = int(renderer.theta_tex.tex.shape[1])
+
+        # 确保 dummy 输入 dtype 和参数一致
+        param = next(mlp_cpu.parameters())
+        dtype = param.dtype
+        device = param.device  # 应该是 cpu
+
+        # 构造一组假的输入，形状 [1,1,C]，Trace 会记录计算图
+        dummy_normal = torch.zeros(1, 1, 3, dtype=dtype, device=device)
+        dummy_pos    = torch.zeros(1, 1, 3, dtype=dtype, device=device)
+        dummy_albedo = torch.zeros(1, 1, 3, dtype=dtype, device=device)
+        dummy_view6  = torch.zeros(1, 1, 6, dtype=dtype, device=device)
+        dummy_theta  = torch.zeros(1, 1, theta_dim, dtype=dtype, device=device)
+
+        with torch.no_grad():
+            mlp_ts = torch.jit.trace(
+                mlp_cpu,
+                (dummy_normal, dummy_pos, dummy_albedo, dummy_view6, dummy_theta),
+                strict=False,  # 允许有少量死分支
+            )
+
         mlp_ts_path = os.path.join(out_dir, "mlp_ts.pt")
         mlp_ts.save(mlp_ts_path)
-        meta["mlp"] = {"format": "torchscript", "file": "mlp_ts.pt"}
+
+        meta["mlp"] = {"format": "torchscript_trace", "file": "mlp_ts.pt"}
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
 
-    print("Exported realtime assets to:", out_dir)
+        print("Exported traced MLP to:", mlp_ts_path)
+
+        print("Exported realtime assets to:", out_dir)
 
 # =============================================================================
 # 7) Entry
