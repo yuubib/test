@@ -227,8 +227,14 @@ class MitsubaNPZDataset(Dataset):
         path = os.path.join(self.root, rel)
         data = np.load(path)
 
+        # pos有补丁
+        m = np.array([-9.64634, -0.01676, -7.6], dtype=np.float32)
+        M = np.array([7.43, 3.8, 0.599999], dtype=np.float32)
+        half_extent = 0.5 * (M - m)      # 0.5*(M-m)
+        center_sum = m + M               # (m+M) —— 当初错误用的“中心”
+        pos = data["position"] * half_extent + center_sum   # P = pos_norm * half_extent + (m+M)
         rgb = torch.from_numpy(data["rgb"]).float()            # [H,W,3]
-        pos = torch.from_numpy(data["position"]).float()       # [H,W,3]
+        pos = torch.from_numpy(pos).float()       # [H,W,3]
         nrm = torch.from_numpy(data["sh_normal"]).float()      # [H,W,3]
         alb = torch.from_numpy(data["albedo"]).float()         # [H,W,3]
         uv  = torch.from_numpy(data["uv"]).float()             # [H,W,2]
@@ -346,7 +352,7 @@ class ProbeGridSH(nn.Module):
         gx = p[..., 0] * (Nx - 1)
         gy = p[..., 1] * (Ny - 1)
         gz = p[..., 2] * (Nz - 1)
-
+        
         x0 = torch.floor(gx).long()
         y0 = torch.floor(gy).long()
         z0 = torch.floor(gz).long()
@@ -473,8 +479,16 @@ class FactorizedRenderer(nn.Module):
     ) -> torch.Tensor:
         c_sh = self.probe_grid.sample_coeffs_trilinear(position)  # [...,16,3]
         E = ProbeGridSH.lambert_irradiance_from_sh_L3(c_sh, normal)  # [...,3]
+
         theta = self.theta_tex.sample(uv)  # [...,D]
-        F_hat = self.mlp(normal, position, albedo, view6, theta)  # [...,3]
+        
+        aabb_min = self.probe_grid.aabb_min
+        aabb_max = self.probe_grid.aabb_max
+        center = 0.5 * (aabb_min + aabb_max)        # [3]
+        radius = 0.5 * (aabb_max - aabb_min)        # [3]
+
+        pos_mlp = (position - center) / (radius + 1e-8)   # [...,3] 大致落在 [-1,1]
+        F_hat = self.mlp(normal, pos_mlp, albedo, view6, theta)  # [...,3]
         return E * F_hat
 
 
@@ -756,17 +770,19 @@ class Trainer:
                 self.best_loss = float(mean_loss)
 
             # build payload once (contains best_loss updated)
-            payload = self._make_payload(epoch=epoch, mean_loss=mean_loss)
+            
 
             # always save latest
-            self.ckpt_mgr.save("latest.pt", payload)
+            #self.ckpt_mgr.save("latest.pt", payload)
 
             # save best
-            if is_best:
-                self.ckpt_mgr.save("best.pt", payload)
+            # if is_best:
+            #     payload = self._make_payload(epoch=epoch, mean_loss=mean_loss)
+            #     self.ckpt_mgr.save("best.pt", payload)
 
             # periodic epoch checkpoint
             if ckpt_cfg.save_every_epochs > 0 and ((epoch + 1) % ckpt_cfg.save_every_epochs == 0):
+                payload = self._make_payload(epoch=epoch, mean_loss=mean_loss)
                 self.ckpt_mgr.save_epoch(epoch, payload)
 
             # preview
@@ -777,7 +793,7 @@ class Trainer:
         final_payload = self._make_payload(epoch=self.train_cfg.epochs - 1, mean_loss=self.best_loss)
         self.ckpt_mgr.save("final.pt", final_payload)
         print("Saved final model to:", os.path.join(ckpt_cfg.ckpt_dir, "final.pt"))
-        export_realtime_assets(self.renderer, out_dir="./realtime_assets", dtype=torch.float16, export_mlp_torchscript=True)
+        #export_realtime_assets(self.renderer, out_dir="./realtime_assets", dtype=torch.float16, export_mlp_torchscript=True)
         return self.renderer
 
 
@@ -911,11 +927,11 @@ def main() -> None:
     model_cfg = ModelConfig(
         theta_dim=32,
         theta_tex_res=(512, 512),
-        probe_grid_res=(128, 128, 128),
+        probe_grid_res=(32, 32, 32),
         sh_order=3,
         aabb_min=(-9.64634, -0.01676, -7.6),
         aabb_max=(7.43, 3.8, 0.6),
-        mlp_hidden_dim=256,
+        mlp_hidden_dim=32,
         mlp_num_hidden_layers=2,
         mlp_use_skip=True,
         mlp_out_activation=None,
@@ -925,28 +941,28 @@ def main() -> None:
 
     ckpt_cfg = CheckpointConfig(
         ckpt_dir="./checkpoints",
-        save_every_epochs=1,
+        save_every_epochs=1000,
         keep_last=5,
-        resume_from=None,     # e.g. "./checkpoints/latest.pt"
+        resume_from="./checkpoints/epoch_0999.pt",     # e.g. "./checkpoints/latest.pt"
         strict_load=True,
     )
 
     train_cfg = TrainConfig(
-        epochs=2,
-        batch_size=4,
+        epochs=2000,
+        batch_size=2,
         lr=1e-3,
-        num_workers=0,
+        num_workers=8,
         log_every=10,
-        step_lr_step_size=10,
+        step_lr_step_size=200,
         step_lr_gamma=0.5,
-        use_amp=False,
+        use_amp=True,
         grad_clip_norm=None,
         ckpt=ckpt_cfg,
     )
 
     trainer = Trainer(data_cfg, model_cfg, train_cfg)
-    trainer.fit(preview_every=1, preview_frame_idx=0, preview_out="./preview.png")
-    
+    #trainer.fit(preview_every=100, preview_frame_idx=0, preview_out="./preview.png")
+    export_realtime_assets(trainer.renderer, out_dir="./realtime_assets", dtype=torch.float16, export_mlp_torchscript=True)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,6 @@ scene = mi.load_file("./veach-ajar/scene.xml")
 
 scene.integrator().render(scene, scene.sensors()[0])
 bmp = scene.sensors()[0].film().bitmap(raw=False)
-denoiser = mi.OptixDenoiser(input_size=bmp.size(), albedo=True, normals=True, temporal=False)
 components = scene.sensors()[0].film().bitmap(raw=False).split()
 
 for i in range(len(components)):

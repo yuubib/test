@@ -295,8 +295,6 @@ class AOVRuntimeRenderer:
         # rgb 做log1p处理
         # pos进行归一化
         pos = BitmapUtils.to_numpy(comp["position"], mi.Bitmap.PixelFormat.RGBA, srgb_gamma=False)[..., :3]
-        pos = (pos - np.array(self.scene.bbox().min + self.scene.bbox().max) * 0.5.reshape(1, 1, 3)) / (
-                np.array(self.scene.bbox().max - self.scene.bbox().min) * 0.5).reshape(1, 1, 3)
 
         nrm = BitmapUtils.to_numpy(comp["sh_normal"], mi.Bitmap.PixelFormat.RGBA, srgb_gamma=False)[..., :3]
         nrm = nrm / np.maximum(np.linalg.norm(nrm, axis=-1, keepdims=True), 1e-8)
@@ -506,7 +504,7 @@ def main():
     cfg = RenderConfig(
         scene_path="veach-ajar/scene.xml",
         out_dir="./dataset",
-        n_frames=100,
+        n_frames=1,
         spp=1024,
         tex_res=512,
         pad_texels=4,
